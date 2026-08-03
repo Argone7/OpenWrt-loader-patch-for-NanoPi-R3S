@@ -2,8 +2,10 @@ name: Manual and Push CI
 
 on:
   push:
-    branches: [ "main" ]  # Запуск при пуше
-  workflow_dispatch:      # Добавляет кнопку ручного запуска
+    branches:
+      - main
+  workflow_dispatch:
+
 - name: Prepare tools (без toolchain)
         working-directory: openwrt
         run: make tools/install -j$(nproc)
