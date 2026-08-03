@@ -6,7 +6,14 @@ on:
       - main
   workflow_dispatch:
 
-- name: Prepare tools (без toolchain)
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare tools (без toolchain)
         working-directory: openwrt
         run: make tools/install -j$(nproc)
 
@@ -27,6 +34,7 @@ on:
           cd "$UBOOT_DIR"
 
           OUTPUT=$(sed -n '/^static int spl_load_fit_image/,/^}/p' common/spl/spl_fit.c \
+
             | grep -n 'fit_image_get_comp\|IH_COMP_GZIP\|gunzip\|src_ptr\|map_sysmem\|external_data' || true)
 
           echo "$OUTPUT"
