@@ -1,0 +1,9 @@
+--- a/common/spl/spl_fit.c
++++ b/common/spl/spl_fit.c
+@@ static int spl_load_fit_image(
+-    if (IS_ENABLED(CONFIG_SPL_FPGA) ||
+-        (IS_ENABLED(CONFIG_SPL_OS_BOOT) && IS_ENABLED(CONFIG_SPL_GZIP))) {
++    if (IS_ENABLED(CONFIG_SPL_FPGA) || IS_ENABLED(CONFIG_SPL_GZIP)) {
+         if (fit_image_get_comp(fit, node, &image_comp))
+             debug("Missing FIT image compression type\n");
+     }
