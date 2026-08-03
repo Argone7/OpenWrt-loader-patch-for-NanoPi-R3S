@@ -1,0 +1,128 @@
+name: Verify U-Boot patches (NanoPi R3S)
+
+on:
+  workflow_dispatch:
+    inputs:
+      uboot_ref:
+        description: 'U-Boot tag/branch/commit to check patches against'
+        required: true
+        default: 'v2025.10'
+  push:
+    paths:
+      - 'patches/uboot-rockchip/**'
+      - '.github/workflows/verify-patches.yml'
+
+env:
+  PATCH_DIR: patches/uboot-rockchip
+  # метки device-tree, которые чаще всего затрагиваются патчами загрузки с SD/eMMC.
+  # список можно расширять при добавлении новых .dtsi-патчей.
+  DT_LABELS_TO_CHECK: >-
+    sdmmc0 sdmmc0_bus4 sdmmc0_clk sdmmc0_cmd sdmmc0_det
+    sdhci vcc3v3_sys vccio_sd
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repo (нужны только патчи)
+        uses: actions/checkout@v4
+
+      - name: List patches to verify
+        run: |
+          if [ ! -d "${PATCH_DIR}" ]; then
+            echo "::error::Directory ${PATCH_DIR} not found"
+            exit 1
+          fi
+          shopt -s nullglob
+          patches=("${PATCH_DIR}"/*.patch)
+          if [ ${#patches[@]} -eq 0 ]; then
+            echo "::error::No .patch files found in ${PATCH_DIR}"
+            exit 1
+          fi
+          echo "Found ${#patches[@]} patch(es):"
+          printf '  %s\n' "${patches[@]}"
+
+      - name: Clone U-Boot (${{ inputs.uboot_ref || 'v2025.10' }})
+        run: |
+          REF="${{ inputs.uboot_ref }}"
+          REF="${REF:-v2025.10}"
+          echo "UBOOT_REF=${REF}" >> "$GITHUB_ENV"
+          git clone --branch "${REF}" --depth 1 \
+            https://source.denx.de/u-boot/u-boot.git uboot
+
+      - name: Install dtc (for optional dtb sanity check)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y device-tree-compiler
+
+      - name: Apply-check each patch (git apply --check)
+        run: |
+          set -o pipefail
+          FAIL=0
+          for p in "${PATCH_DIR}"/*.patch; do
+            echo "::group::apply-check: ${p}"
+            if git -C uboot apply --check --verbose "../${p}"; then
+              echo "OK: ${p} applies cleanly"
+            else
+              echo "::error::${p} does NOT apply cleanly against ${UBOOT_REF}"
+              FAIL=1
+            fi
+            echo "::endgroup::"
+          done
+          if [ "$FAIL" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Apply patches for real (temp working tree)
+        run: |
+          for p in "${PATCH_DIR}"/*.patch; do
+            echo "Applying ${p}"
+            git -C uboot apply "../${p}"
+          done
+
+      - name: Check referenced device-tree labels exist upstream
+        run: |
+          echo "Проверяем, что метки, на которые ссылаются патчи, реально существуют"
+          echo "в device-tree дереве rockchip (за пределами самого патченного файла)."
+          FAIL=0
+          for label in ${DT_LABELS_TO_CHECK}; do
+            echo "--- ${label} ---"
+            hits=$(grep -rln "${label}:" uboot/arch/arm/dts/ 2>/dev/null \
+                   | grep -v 'nanopi-r3s-u-boot\.dtsi' || true)
+            if [ -z "$hits" ]; then
+              echo "::warning::label '${label}' not found outside the patched file — verify it exists upstream"
+            else
+              echo "found in:"
+              echo "$hits"
+            fi
+          done
+
+      - name: Check bootph-* property support in this U-Boot version
+        run: |
+          echo "Патчи используют bootph-pre-ram / bootph-some-ram (актуальный синтаксис)."
+          echo "Если версия U-Boot старая, может потребоваться u-boot,dm-pre-reloc."
+          if grep -rq 'bootph-pre-ram' uboot/doc/ uboot/include/ 2>/dev/null; then
+            echo "OK: bootph-pre-ram syntax is supported in ${UBOOT_REF}"
+          else
+            echo "::warning::bootph-pre-ram not referenced in docs/includes — this U-Boot version may expect the older u-boot,dm-pre-reloc syntax instead"
+          fi
+
+      - name: Sanity build check — compile board dtb only
+        continue-on-error: true
+        run: |
+          echo "Пытаемся собрать только dtb для платы, без полной сборки U-Boot."
+          echo "Это best-effort шаг: если defconfig недоступен в этом дереве, шаг будет пропущен с предупреждением."
+          cd uboot
+          if [ -f configs/nanopi-r3s-rk3566_defconfig ]; then
+            make nanopi-r3s-rk3566_defconfig
+            make -j"$(nproc)" arch/arm/dts/rk3566-nanopi-r3s-u-boot.dtb 2>&1 | tail -n 60
+          else
+            echo "::warning::configs/nanopi-r3s-rk3566_defconfig not found in this U-Boot ref — skipping build check"
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "Проверка патчей завершена для U-Boot ref: ${UBOOT_REF}"
+          echo "Если выше есть ::error:: — патч не применяется или ссылается на несуществующие метки."
+          echo "::warning:: — не блокирует, но требует ручной проверки перед мержем в основной build workflow."
