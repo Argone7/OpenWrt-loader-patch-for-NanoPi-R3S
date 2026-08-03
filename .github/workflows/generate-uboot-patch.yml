@@ -1,0 +1,136 @@
+name: Generate U-Boot patch (op-tee alias)
+
+# Не пишем diff руками — клонируем реальный U-Boot, вносим правку в живой файл,
+# и получаем patch через `git diff`. Это гарантирует корректный формат:
+# правильные номера строк в хуке @@, реальные отступы (табы), достаточный контекст.
+
+on:
+  workflow_dispatch:
+    inputs:
+      uboot_ref:
+        description: 'U-Boot tag/branch/commit'
+        required: true
+        default: 'v2025.10'
+      os_id:
+        description: 'Существующая константа IH_OS_* для алиаса'
+        required: true
+        default: 'IH_OS_TEE'
+      existing_name:
+        description: 'Существующее короткое имя в таблице (для поиска строки-якоря)'
+        required: true
+        default: 'tee'
+      new_alias:
+        description: 'Новый алиас, который нужно добавить'
+        required: true
+        default: 'op-tee'
+      new_description:
+        description: 'Описание для нового алиаса'
+        required: true
+        default: 'OP-TEE'
+      patch_filename:
+        description: 'Имя выходного .patch файла'
+        required: true
+        default: '202-image-optee-alias.patch'
+
+jobs:
+  generate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Clone U-Boot (${{ inputs.uboot_ref }})
+        run: |
+          git clone --branch "${{ inputs.uboot_ref }}" --depth 1 \
+            https://source.denx.de/u-boot/u-boot.git uboot
+          cd uboot
+          git config user.email "ci@example.invalid"
+          git config user.name "patch-generator"
+
+      - name: Locate anchor line in boot/image.c
+        working-directory: uboot
+        run: |
+          echo "Ищем строку-якорь по существующему имени, чтобы добавить новую рядом."
+          grep -n "\"${{ inputs.existing_name }}\"" boot/image.c \
+            || { echo "::error::anchor line with \"${{ inputs.existing_name }}\" not found in boot/image.c — adjust existing_name input"; exit 1; }
+
+      - name: Insert new table entry (preserves original formatting)
+        working-directory: uboot
+        run: |
+          python3 - "$OS_ID" "$EXISTING_NAME" "$NEW_ALIAS" "$NEW_DESC" << 'PYEOF'
+          import re, sys
+
+          os_id, existing_name, new_alias, new_desc = sys.argv[1:5]
+          path = "boot/image.c"
+
+          with open(path, encoding="utf-8") as f:
+              lines = f.readlines()
+
+          anchor_idx = None
+          for i, line in enumerate(lines):
+              if os_id in line and f'"{existing_name}"' in line:
+                  anchor_idx = i
+                  break
+
+          if anchor_idx is None:
+              sys.exit(f"anchor line not found for {os_id} / {existing_name}")
+
+          anchor = lines[anchor_idx]
+
+          # Заменяем в копии строки-якоря alias и description, сохраняя
+          # ровно ту же структуру пробелов/табов, что и в оригинале —
+          # так итоговый diff будет соответствовать реальному code style.
+          new_line = anchor.replace(f'"{existing_name}"', f'"{new_alias}"', 1)
+          # Заменяем последнее строковое литеральное поле (description) на новое.
+          # Оно всегда последнее "..." в строке перед `},` / `}`
+          strings = list(re.finditer(r'"[^"]*"', new_line))
+          if len(strings) >= 2:
+              last = strings[-1]
+              new_line = new_line[:last.start()] + f'"{new_desc}"' + new_line[last.end():]
+
+          lines.insert(anchor_idx + 1, new_line)
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.writelines(lines)
+
+          print("Inserted line:")
+          print(new_line.rstrip())
+          PYEOF
+        env:
+          OS_ID: ${{ inputs.os_id }}
+          EXISTING_NAME: ${{ inputs.existing_name }}
+          NEW_ALIAS: ${{ inputs.new_alias }}
+          NEW_DESC: ${{ inputs.new_description }}
+
+      - name: Show the actual change
+        working-directory: uboot
+        run: git diff -- boot/image.c
+
+      - name: Optional style check (U-Boot's own checkpatch.pl, best-effort)
+        working-directory: uboot
+        continue-on-error: true
+        run: |
+          if [ -x scripts/checkpatch.pl ]; then
+            git diff -- boot/image.c | perl scripts/checkpatch.pl --no-tree --no-signoff -
+          else
+            echo "checkpatch.pl not found/executable — skipping style check"
+          fi
+
+      - name: Save patch file
+        working-directory: uboot
+        run: |
+          mkdir -p ../out
+          git diff -- boot/image.c > "../out/${{ inputs.patch_filename }}"
+          echo "--- resulting patch ---"
+          cat "../out/${{ inputs.patch_filename }}"
+
+      - name: Sanity check — re-apply generated patch to a clean checkout
+        run: |
+          rm -rf uboot
+          git clone --branch "${{ inputs.uboot_ref }}" --depth 1 \
+            https://source.denx.de/u-boot/u-boot.git uboot
+          git -C uboot apply --check --verbose "../out/${{ inputs.patch_filename }}"
+          echo "OK: generated patch applies cleanly against a fresh checkout"
+
+      - name: Upload generated patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-patch
+          path: out/${{ inputs.patch_filename }}
