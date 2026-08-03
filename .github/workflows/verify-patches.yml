@@ -55,7 +55,33 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y device-tree-compiler
 
+      - name: Debug — show target files as they exist upstream
+        run: |
+          echo "Показываем содержимое файлов, которые патчи собираются менять,"
+          echo "чтобы визуально сверить контекст (whitespace, структура, путь)."
+          for p in "${PATCH_DIR}"/*.patch; do
+            echo "::group::debug: ${p}"
+            # извлекаем пути 'a/...' из заголовков диффа
+            targets=$(grep -E '^--- a/' "${p}" | sed 's#^--- a/##')
+            for t in $targets; do
+              echo "--- expected path: ${t} ---"
+              if [ -f "uboot/${t}" ]; then
+                echo "FILE EXISTS. Content (cat -A, first 40 lines):"
+                cat -A "uboot/${t}" | head -40
+              else
+                echo "FILE DOES NOT EXIST at this path in ${UBOOT_REF}"
+              fi
+              echo "--- searching for similarly named files anywhere in tree ---"
+              base=$(basename "${t}")
+              # ищем по значимой части имени (без -u-boot.dtsi/.dts суффикса тоже)
+              stem=$(echo "$base" | sed -E 's/-u-boot\.dtsi$//; s/\.dts(i)?$//')
+              find uboot -iname "*${stem}*" 2>/dev/null
+            done
+            echo "::endgroup::"
+          done
+
       - name: Apply-check each patch (git apply --check)
+        continue-on-error: true
         run: |
           set -o pipefail
           FAIL=0
@@ -70,10 +96,26 @@ jobs:
             echo "::endgroup::"
           done
           if [ "$FAIL" -ne 0 ]; then
-            exit 1
+            echo "APPLY_CHECK_FAILED=1" >> "$GITHUB_ENV"
           fi
 
+      - name: Fuzzy apply attempt (diagnostic only, does not fail the job)
+        if: env.APPLY_CHECK_FAILED == '1'
+        run: |
+          echo "apply --check провалился выше. Пробуем fuzzy-match через patch(1),"
+          echo "чтобы понять, насколько сильно контекст разошёлся."
+          cd uboot
+          for p in ../"${PATCH_DIR}"/*.patch; do
+            echo "::group::fuzzy: ${p}"
+            patch -p1 --fuzz=3 --dry-run < "${p}" || true
+            echo "::endgroup::"
+          done
+          cd ..
+          echo "::error::One or more patches failed clean apply-check — see 'Debug' and 'Fuzzy apply' output above for details"
+          exit 1
+
       - name: Apply patches for real (temp working tree)
+        if: env.APPLY_CHECK_FAILED != '1'
         run: |
           for p in "${PATCH_DIR}"/*.patch; do
             echo "Applying ${p}"
@@ -81,6 +123,7 @@ jobs:
           done
 
       - name: Check referenced device-tree labels exist upstream
+        if: env.APPLY_CHECK_FAILED != '1'
         run: |
           echo "Проверяем, что метки, на которые ссылаются патчи, реально существуют"
           echo "в device-tree дереве rockchip (за пределами самого патченного файла)."
@@ -108,6 +151,7 @@ jobs:
           fi
 
       - name: Sanity build check — compile board dtb only
+        if: env.APPLY_CHECK_FAILED != '1'
         continue-on-error: true
         run: |
           echo "Пытаемся собрать только dtb для платы, без полной сборки U-Boot."
