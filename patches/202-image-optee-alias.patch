@@ -1,0 +1,5 @@
+--- a/boot/image.c
++++ b/boot/image.c
+@@ static const table_entry_t uimage_os[] = {
+     {    IH_OS_TEE,    "tee",        "Trusted Execution Environment" },
++    {    IH_OS_TEE,    "op-tee",    "OP-TEE"    },
