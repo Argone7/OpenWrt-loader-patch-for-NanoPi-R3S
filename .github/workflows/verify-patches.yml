@@ -42,6 +42,30 @@ jobs:
           echo "Found ${#patches[@]} patch(es):"
           printf '  %s\n' "${patches[@]}"
 
+      - name: Validate unified diff format (before cloning U-Boot)
+        run: |
+          echo "Проверяем базовый синтаксис unified diff — заголовок хука должен"
+          echo "содержать диапазон строк '@@ -N,M +N,M @@', а не только имя функции."
+          FAIL=0
+          for p in "${PATCH_DIR}"/*.patch; do
+            echo "::group::format-check: ${p}"
+            bad_hunks=$(grep -n '^@@' "${p}" | grep -vE '^[0-9]+:@@ -[0-9]+(,[0-9]+)? \+[0-9]+(,[0-9]+)? @@' || true)
+            if [ -n "$bad_hunks" ]; then
+              echo "::error::${p} has malformed hunk header(s) — missing '-N,M +N,M' line range:"
+              echo "$bad_hunks"
+              FAIL=1
+            fi
+            if ! grep -q '^@@' "${p}"; then
+              echo "::error::${p} has no '@@' hunk header at all — not a valid unified diff"
+              FAIL=1
+            fi
+            echo "::endgroup::"
+          done
+          if [ "$FAIL" -ne 0 ]; then
+            echo "::error::One or more patches are not valid unified diffs — fix them before proceeding (see 'git diff' to regenerate correctly)"
+            exit 1
+          fi
+
       - name: Clone U-Boot (${{ inputs.uboot_ref || 'v2025.10' }})
         run: |
           REF="${{ inputs.uboot_ref }}"
@@ -114,7 +138,7 @@ jobs:
           echo "::group::shared rk356x.dtsi / rk3566.dtsi — mmc controller labels"
           for f in $(find uboot -iname 'rk356x.dtsi' -o -iname 'rk3566.dtsi'); do
             echo "--- $f ---"
-            grep -n -B1 'mmc@\|sdhci' "$f"
+            grep -n -B1 'mmc@\|sdhci' "$f" || echo "(no matches in this file)"
           done
           echo "::endgroup::"
 
