@@ -89,13 +89,28 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p out
-          IDB=$(find openwrt/staging_dir -iname '*idbloader*.img' | head -n1)
-          ITB=$(find openwrt/staging_dir -iname 'u-boot*.itb' | head -n1)
+          IDB=$(find openwrt/build_dir -iname '*idbloader*.img' | head -n1)
+          ITB=$(find openwrt/build_dir -iname 'u-boot*.itb' | head -n1)
+
+          if [ -z "$IDB" ]; then
+            echo "::error::idbloader.img not found"
+            exit 1
+          fi
+          if [ -z "$ITB" ]; then
+            echo "::error::u-boot.itb not found"
+            exit 1
+          fi
+
+          echo "Found IDB: $IDB"
+          echo "Found ITB: $ITB"
+
           cp "$IDB" out/idbloader.img
           cp "$ITB" out/u-boot.itb
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: nanopi-r3s-lts-uboot
-          path: out/
+          
+      - name: Locate resulting files
+        working-directory: openwrt
+        run: |
+          echo "--- idbloader ---"
+          find build_dir -iname '*idbloader*.img'
+          echo "--- u-boot.itb ---"
+          find build_dir -iname 'u-boot*.itb'
