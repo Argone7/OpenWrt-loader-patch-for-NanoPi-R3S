@@ -17,26 +17,10 @@ jobs:
           git clone --branch "${{ inputs.uboot_tag }}" --depth 1 \
             https://source.denx.de/u-boot/u-boot.git uboot
 
-      - name: Check spl_load_fit_image (spl_fit.c)
+      - name: Show function signature containing target logic
         working-directory: uboot
         run: |
-          echo "=== function exists? ==="
-          grep -n 'spl_load_fit_image' common/spl/spl_fit.c || echo "function name not found at all in this file"
-
-          echo ""
-          echo "=== full function body (first 80 lines) ==="
-          sed -n '/^static int spl_load_fit_image/,/^}/p' common/spl/spl_fit.c | head -n 80
-
-          echo ""
-          echo "=== target patterns within that body ==="
-          sed -n '/^static int spl_load_fit_image/,/^}/p' common/spl/spl_fit.c \
-            | grep -n 'fit_image_get_comp\|IH_COMP_GZIP\|gunzip\|src_ptr\|map_sysmem\|external_data' \
-            || echo "NOT FOUND — pattern changed or moved"
-
-          echo ""
-          echo "=== search patterns anywhere in the file (in case logic moved to another function) ==="
-          grep -n 'fit_image_get_comp\|IH_COMP_GZIP\|gunzip\|external_data' common/spl/spl_fit.c \
-            || echo "not present anywhere in spl_fit.c"
+          sed -n '180,340p' common/spl/spl_fit.c
 
       - name: Check get_table_entry_id (image.c)
         working-directory: uboot
