@@ -80,6 +80,44 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Debug — show shared rk356x-u-boot.dtsi and board dts
+        run: |
+          echo "Смотрим общий (не board-specific) -u-boot.dtsi, который подключается"
+          echo "через #include в патченном файле — spl-boot-order может быть уже там,"
+          echo "и тогда патчу нужно ПЕРЕОПРЕДЕЛИТЬ свойство, а не добавлять новый блок chosen."
+          echo ""
+          echo "::group::rk356x-u-boot.dtsi (shared)"
+          shared=$(find uboot -iname 'rk356x-u-boot.dtsi' | head -n1)
+          if [ -n "$shared" ]; then
+            echo "found at: $shared"
+            cat -A "$shared"
+          else
+            echo "NOT FOUND anywhere in tree"
+          fi
+          echo "::endgroup::"
+
+          echo "::group::search 'spl-boot-order' anywhere in dts tree"
+          grep -rn 'spl-boot-order' uboot/arch/arm/dts/ uboot/dts/ 2>/dev/null \
+            || echo "'spl-boot-order' not found anywhere — this mechanism may not be used for this board/version at all"
+          echo "::endgroup::"
+
+          echo "::group::main board dts (rk3566-nanopi-r3s.dts) — mmc/sdhci node names"
+          board_dts=$(find uboot -iname 'rk3566-nanopi-r3s.dts' | head -n1)
+          if [ -n "$board_dts" ]; then
+            echo "found at: $board_dts"
+            grep -n -B2 -A2 'sdmmc\|sdhci\|mmc@' "$board_dts"
+          else
+            echo "NOT FOUND"
+          fi
+          echo "::endgroup::"
+
+          echo "::group::shared rk356x.dtsi / rk3566.dtsi — mmc controller labels"
+          for f in $(find uboot -iname 'rk356x.dtsi' -o -iname 'rk3566.dtsi'); do
+            echo "--- $f ---"
+            grep -n -B1 'mmc@\|sdhci' "$f"
+          done
+          echo "::endgroup::"
+
       - name: Apply-check each patch (git apply --check)
         continue-on-error: true
         run: |
