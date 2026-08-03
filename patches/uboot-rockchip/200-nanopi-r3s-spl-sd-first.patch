@@ -1,6 +1,6 @@
 --- a/arch/arm/dts/rk3566-nanopi-r3s-u-boot.dtsi
 +++ b/arch/arm/dts/rk3566-nanopi-r3s-u-boot.dtsi
-@@
+@@ -1,5 +1,39 @@
  / {
      chosen {
 -        u-boot,spl-boot-order = "same-as-spl", &sdhci;
