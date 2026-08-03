@@ -1,0 +1,37 @@
+- name: Prepare tools (без toolchain)
+        working-directory: openwrt
+        run: make tools/install -j$(nproc)
+
+      - name: Extract & patch U-Boot source (без компиляции)
+        working-directory: openwrt
+        run: make package/boot/uboot-rockchip/{clean,prepare} V=s
+
+      - name: Sanity-check patched spl_fit.c
+        working-directory: openwrt
+        run: |
+          set -euo pipefail
+          UBOOT_DIR=$(find build_dir -type d -path '*/u-boot-nanopi-r3s-rk3566/u-boot-*' | head -n1)
+          if [ -z "$UBOOT_DIR" ]; then
+            echo "::error::u-boot source dir not found — prepare step failed?"
+            exit 1
+          fi
+          echo "U-Boot source: $UBOOT_DIR"
+          cd "$UBOOT_DIR"
+
+          OUTPUT=$(sed -n '/^static int spl_load_fit_image/,/^}/p' common/spl/spl_fit.c \
+            | grep -n 'fit_image_get_comp\|IH_COMP_GZIP\|gunzip\|src_ptr\|map_sysmem\|external_data' || true)
+
+          echo "$OUTPUT"
+
+          if [ -z "$OUTPUT" ]; then
+            echo "::error::Ожидаемая логика (gzip/external_data) в spl_load_fit_image не найдена — патч не применился или не попал в этот файл"
+            exit 1
+          fi
+
+      - name: Build ARM Trusted Firmware
+        working-directory: openwrt
+        run: make package/boot/arm-trusted-firmware-rockchip/compile -j$(nproc) V=s
+
+      - name: Build U-Boot
+        working-directory: openwrt
+        run: make package/boot/uboot-rockchip/compile -j$(nproc) V=s
