@@ -1,0 +1,10 @@
+diff --git a/configs/nanopi-r3s-rk3566_defconfig b/configs/nanopi-r3s-rk3566_defconfig
+index 118686c0..a279b716 100644
+--- a/configs/nanopi-r3s-rk3566_defconfig
++++ b/configs/nanopi-r3s-rk3566_defconfig
+@@ -71,3 +71,5 @@ CONFIG_USB_XHCI_HCD=y
+ CONFIG_USB_DWC3=y
+ CONFIG_USB_DWC3_GENERIC=y
+ CONFIG_ERRNO_STR=y
++CONFIG_SPL_GZIP=y
++CONFIG_SPL_OPTEE_IMAGE=y
