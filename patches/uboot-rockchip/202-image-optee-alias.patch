@@ -1,5 +1,34 @@
-diff --git a/boot/image.c b/boot/image.c
-index abac2c70..1915a0f1 100644
+boot: image: add "op-tee" as an alias for IH_OS_TEE
+
+rkbin's mkimage config marks the OP-TEE image in the FIT with
+os = "op-tee", while mainline U-Boot's uimage_os[] table only
+recognizes the string "tee" for IH_OS_TEE.
+
+This mismatch is silent and does not break the build or the boot
+log in any obvious way: common/spl/spl_fit.c loads and decompresses
+the OP-TEE image into RAM regardless of whether the "os" string is
+recognized, since load_simple_fit() only relies on the load/data/
+compression FIT properties.
+
+However, on ATF/TF-A boot paths (common/spl/spl_atf.c,
+CONFIG_SPL_ATF=y), the OP-TEE entry point handed to BL31 as BL32 is
+found separately, by looking up a FIT loadable node whose recorded
+"os" property resolves to IH_OS_TEE (spl_fit_images_find() ->
+genimg_get_os_id()). If "op-tee" is not a known alias, this lookup
+fails, bl32_entry stays 0, and BL31 is told there is no secure
+payload at all:
+
+    bl_params_node->ep_info->pc = bl32_entry ? bl32_entry : 0;
+
+Net effect: OP-TEE is correctly loaded into memory, but never
+receives control from BL31. The board boots normally otherwise,
+so this failure is easy to miss without explicitly checking for
+Trusted Execution Environment support at runtime.
+
+Adding "op-tee" as a second alias for IH_OS_TEE in uimage_os[] fixes
+the lookup without affecting the existing "tee" alias or any other
+table entry.
+
 --- a/boot/image.c
 +++ b/boot/image.c
 @@ -105,6 +105,7 @@ static const table_entry_t uimage_os[] = {
