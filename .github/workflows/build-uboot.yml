@@ -40,11 +40,11 @@ jobs:
             openwrt/staging_dir/toolchain-*
           key: ${{ runner.os }}-owrt-${{ env.OPENWRT_TAG }}-${{ env.DEVICE_PROFILE }}
 
-#      - name: Inject custom u-boot patches
-#        run: |
-#          mkdir -p openwrt/package/boot/uboot-rockchip/patches
-#          cp patches/uboot-rockchip/*.patch \
-#             openwrt/package/boot/uboot-rockchip/patches/
+      - name: Inject custom u-boot patches
+        run: |
+          mkdir -p openwrt/package/boot/uboot-rockchip/patches
+          cp patches/uboot-rockchip/*.patch \
+             openwrt/package/boot/uboot-rockchip/patches/
 
       - name: Feeds
         working-directory: openwrt
