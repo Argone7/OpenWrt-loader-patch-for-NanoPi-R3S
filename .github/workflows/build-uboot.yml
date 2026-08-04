@@ -106,11 +106,9 @@ jobs:
 
           cp "$IDB" out/idbloader.img
           cp "$ITB" out/u-boot.itb
-          
-      - name: Locate resulting files
-        working-directory: openwrt
-        run: |
-          echo "--- idbloader ---"
-          find build_dir -iname '*idbloader*.img'
-          echo "--- u-boot.itb ---"
-          find build_dir -iname 'u-boot*.itb'
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nanopi-r3s-lts-uboot
+          path: out/
