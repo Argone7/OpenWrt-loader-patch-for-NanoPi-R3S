@@ -1,5 +1,24 @@
-diff --git a/configs/nanopi-r3s-rk3566_defconfig b/configs/nanopi-r3s-rk3566_defconfig
-index 118686c0..4b43e457 100644
+configs: nanopi-r3s-rk3566: enable SPL_GZIP for gzip-compressed FIT loadables
+
+rkbin's FIT image for this board ships its non-TPL loadables (ATF/
+BL31, OP-TEE) gzip-compressed to fit within SPL's size/time budget.
+common/spl/spl_fit.c only attempts decompression when
+spl_decompression_enabled() is true, which in turn requires
+CONFIG_SPL_GZIP (or CONFIG_SPL_LZMA) to be enabled - without it,
+compressed loadables are copied into RAM as-is and never inflated,
+so any component encoded as IH_COMP_GZIP fails to boot correctly.
+
+Note: an earlier version of this patch also added
+CONFIG_SPL_OPTEE_IMAGE=y to enable OP-TEE registration in SPL. That
+option was dropped again: its only implementation,
+common/spl/spl_optee.S, is written entirely in ARM32 assembly
+(.syntax unified, "mov pc, r3") and fails to assemble on this
+board's AArch64 target. On this board OP-TEE is handed to BL31 via
+the ATF path in common/spl/spl_atf.c instead (CONFIG_SPL_ATF=y is
+already enabled), which does not depend on CONFIG_SPL_OPTEE_IMAGE at
+all - see 202-image-optee-alias.patch for the actual fix needed on
+that path (the FIT "os" string alias).
+
 --- a/configs/nanopi-r3s-rk3566_defconfig
 +++ b/configs/nanopi-r3s-rk3566_defconfig
 @@ -71,3 +71,4 @@ CONFIG_USB_XHCI_HCD=y
