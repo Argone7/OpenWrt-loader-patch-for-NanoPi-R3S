@@ -1,0 +1,39 @@
+arm: dts: rockchip: rk356x: always prefer SD card over eMMC for FIT loading
+
+board_boot_order() (arch/arm/mach-rockchip/spl-boot-order.c) builds the
+SPL boot-device search list by walking u-boot,spl-boot-order in source
+order and stops at the first device that yields a valid FIT. The
+"same-as-spl" keyword resolves to whichever device the BootROM itself
+already used to load idbloader.img/SPL (board_spl_was_booted_from()),
+and is inserted at the front of that list.
+
+On this SoC family the BootROM's own device probing (independent of
+U-Boot, fixed in mask ROM) is not something this property can
+influence. When the BootROM happens to boot SPL from eMMC in a given
+power-on cycle (e.g. no SD card present at that moment, a transient
+SD init failure, etc.) and eMMC also carries a valid u-boot.itb,
+"same-as-spl" causes SPL to try and succeed on eMMC first - the
+explicit &sdmmc0 entry later in the list is never reached in that
+boot, even though it is listed ahead of &sdhci.
+
+Dropping "same-as-spl" makes the FIT search order unconditionally
+SD-first, eMMC-second, regardless of which device the BootROM used to
+load SPL itself. bootph-pre-ram/bootph-some-ram for the sdmmc0
+controller and its pinctrl groups, as well as for sdhci, are already
+set earlier in this file and need no changes. The SD card's power
+rail (vcc3v3_sd, on the RK809 PMIC) is regulator-always-on and
+regulator-boot-on in the board dts, matching how sdhci's own supply
+is handled here (no bootph tag on the PMIC/i2c chain either) - so no
+additional bootph tagging is needed for the regulator.
+
+--- a/arch/arm/dts/rk356x-u-boot.dtsi
++++ b/arch/arm/dts/rk356x-u-boot.dtsi
+@@ -13,7 +13,7 @@
+ 	};
+ 
+ 	chosen {
+-		u-boot,spl-boot-order = "same-as-spl", &sdmmc0, &sdhci;
++		u-boot,spl-boot-order = &sdmmc0, &sdhci;
+ 	};
+ 
+ 	dmc: dmc {
